@@ -53,6 +53,9 @@ def handle_menu_options(message):
         case "Agendar uma consulta":
             user_states[chat_id] = 'check_rg'
             bot.send_message(chat_id, "Por favor, insira seu RG:")
+        case "Revisão":
+            user_states[chat_id] = 'check_rg_revisao'
+            bot.send_message(chat_id, "Por favor, insira seu RG:")
 
 
 # PRIMEIRA CONSULTA
@@ -238,6 +241,15 @@ CREATE TABLE IF NOT EXISTS patients (
 conn.execute(create_table_query)
 conn.commit()
 
+try:
+    conn.execute("ALTER TABLE patients ADD COLUMN revisao_assunto TEXT;")
+    conn.commit()
+except sqlite3.OperationalError as e:
+    if "duplicate column name" in str(e):
+        print("A coluna 'revisao_assunto' já existe.")
+    else:
+        print("Erro ao adicionar a coluna:", e)
+
 
 # Escolher horário
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'appointment_time')
@@ -271,6 +283,42 @@ def handle_appointment_available(message):
 
     bot.send_message(chat_id, f"Consulta agendada para {chosen_date} às {chosen_time}. Obrigado!")
 
+
+# REVISÃO
+@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'check_rg_revisao')
+def check_rg_and_show_revision_options(message):
+    chat_id = message.chat.id
+    rg = message.text
+
+    with sqlite3.connect('clinic_database.db') as conn:
+        cursor = conn.execute("SELECT * FROM patients WHERE rg = ?", (rg,))
+        patient_data = cursor.fetchone()
+
+        if patient_data:
+            user_states[chat_id] = 'revisao_assunto'
+            markup = types.ReplyKeyboardMarkup(row_width=2)
+            btn1 = types.KeyboardButton("Pós cirurgia")
+            btn2 = types.KeyboardButton("Resultados")
+            markup.add(btn1, btn2)
+            bot.send_message(chat_id, "Escolha o assunto da revisão:", reply_markup=markup)
+        else:
+            bot.send_message(chat_id, "RG não encontrado. Por favor, realize o cadastro primeiro.")
+            user_states[chat_id] = 'menu'
+            show_menu(chat_id)
+
+# Atualizar o banco de dados e mostrar as datas disponíveis
+@bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'revisao_assunto')
+def handle_revision_subject(message):
+    chat_id = message.chat.id
+    revisao_assunto = message.text
+
+    with sqlite3.connect('clinic_database.db') as conn:
+        conn.execute("UPDATE patients SET revisao_assunto = ? WHERE chat_id = ?", (revisao_assunto, chat_id))
+        conn.commit()
+
+    user_states[chat_id] = 'appointment'
+    bot.send_message(chat_id, "Assunto da revisão registrado. Agora escolha a data e o horário para a revisão.")
+    show_available_appointments(chat_id)
 
 # Inicia o bot
 bot.polling()
