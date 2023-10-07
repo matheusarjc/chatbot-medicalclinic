@@ -16,10 +16,14 @@ user_data ={}
 
 # Função para exibir o menu de opções
 def show_menu(chat_id):
+    if user_states.get(chat_id) == 'done':  # Verifica se o estado é 'done'
+        return  # Não faz nada se o estado for 'done'
+
     if 'menu_shown' in user_states and user_states['menu_shown']:
         greeting = "Selecione uma opção no menu:"
     else:
-        greeting = "Olá, seja bem-vindo à Clínica Médica! Como posso ajudar você?"
+        greeting = ('Olá, seja bem-vindo à Clínica Médica! Como podemos te ajudar?👨‍⚕️🤍\n\nLembrando: Se sua solicitação já '
+                    'foi executada e gostaria de utilizar novamente em outra situação, digite o comando "/start"')
         user_states['menu_shown'] = True  # Marca que o menu já foi mostrado
 
     markup = types.ReplyKeyboardMarkup(row_width=2)
@@ -141,9 +145,13 @@ def check_rg_and_schedule(message):
                 # Verifica se o dia da consulta já passou
                 cursor = conn.execute("SELECT * FROM patients WHERE rg = ?", (rg,))
                 last_appointment_data = cursor.fetchone()
-                last_appointment_date = datetime.strptime(last_appointment_data[6], "%Y-%m-%d").date()
 
-                if last_appointment_date < current_date:
+                if last_appointment_data[6] is not None:  # Verificação adicionada aqui
+                    last_appointment_date = datetime.strptime(last_appointment_data[6], "%d-%m-%Y").date()
+                else:
+                    last_appointment_date = None
+
+                if last_appointment_date and last_appointment_date < current_date:
                     # Atualiza a coluna "ultima_consulta"
                     conn.execute("UPDATE patients SET ultima_consulta = ? WHERE rg = ?", (last_appointment_date, rg))
                     conn.commit()
@@ -282,6 +290,7 @@ def handle_appointment_available(message):
             conn.commit()
 
     bot.send_message(chat_id, f"Consulta agendada para {chosen_date} às {chosen_time}. Obrigado!")
+    user_states[chat_id] = 'done'  # Atualiza o estado para 'done'
 
 
 # REVISÃO
@@ -306,6 +315,7 @@ def check_rg_and_show_revision_options(message):
             user_states[chat_id] = 'menu'
             show_menu(chat_id)
 
+
 # Atualizar o banco de dados e mostrar as datas disponíveis
 @bot.message_handler(func=lambda message: user_states.get(message.chat.id) == 'revisao_assunto')
 def handle_revision_subject(message):
@@ -319,6 +329,7 @@ def handle_revision_subject(message):
     user_states[chat_id] = 'appointment'
     bot.send_message(chat_id, "Assunto da revisão registrado. Agora escolha a data e o horário para a revisão.")
     show_available_appointments(chat_id)
+
 
 # Inicia o bot
 bot.polling()
